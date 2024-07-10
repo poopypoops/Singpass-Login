@@ -1,0 +1,62 @@
+from jwcrypto import jwk
+import json
+from datetime import datetime
+
+# Function to generate a JWK key with specified attributes and save private key
+def generate_jwk_key(use, crv='P-256'):
+    key = jwk.JWK.generate(kty='EC', crv=crv)
+    key_kid = f"{use}-{datetime.utcnow().isoformat()}"
+    key_obj = json.loads(key.export(private_key=False))
+    key_obj['use'] = use
+    key_obj['kid'] = key_kid
+    if use == 'enc':
+        key_obj['alg'] = 'ECDH-ES+A128KW'
+    
+    # Save private key
+    private_key_path = f'{use}_private_key.pem'
+    with open(private_key_path, 'w') as private_key_file:
+        private_key_file.write(key.export_to_pem(private_key=True, password=None).decode('utf-8'))
+    
+    return key, key_obj
+
+# Generate EC signing key
+signing_key, signing_key_obj = generate_jwk_key('sig')
+
+# Generate EC encryption key
+encryption_key, encryption_key_obj = generate_jwk_key('enc')
+
+# Create the JWKS
+jwks = {
+    "keys": [signing_key_obj, encryption_key_obj]
+}
+
+# Save JWKS to a JSON file (this is to be uploaded onto a publicly accessible JWKS endpoint)
+jwks_path = 'jwks.json'
+with open(jwks_path, 'w') as jwks_file:
+    json.dump(jwks, jwks_file, indent=4)
+
+print(f"JWKS saved to {jwks_path}")
+print(json.dumps(jwks, indent=4))
+
+
+# Check the saved private keys
+with open('sig_private_key.pem', 'r') as sig_private_key_file:
+    sig_private_key = sig_private_key_file.read()
+    print(f"Signing Private Key: \n{sig_private_key}")
+
+with open('enc_private_key.pem', 'r') as enc_private_key_file:
+    enc_private_key = enc_private_key_file.read()
+    print(f"Encryption Private Key: \n{enc_private_key}")
+
+from jwcrypto import jwk
+
+def load_private_key(path):
+    with open(path, 'r') as private_key_file:
+        private_key_pem = private_key_file.read()
+    return jwk.JWK.from_pem(private_key_pem.encode('utf-8'))
+
+# Load the private keys
+signing_key = load_private_key('sig_private_key.pem')
+encryption_key = load_private_key('enc_private_key.pem')
+
+# Now you can use these keys for signing JWTs and decrypting encrypted ID tokens.
