@@ -4,34 +4,99 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JWKS Verifier</title>
-  <script src="https://cdn.jsdelivr.net/npm/jose@4.13.1/dist/browser/jose.min.js"></script>
 </head>
 <body>
   <h2>JWKS Key Verification</h2>
-  <p>Enter the JWKS URL of the Relying Party to verify the keys:</p>
+  <p>Enter the JWKS URL to verify the keys:</p>
   <input type="text" id="jwksUrl" placeholder="Enter JWKS URL" />
   <button id="verifyButton">Verify JWKS</button>
+  <pre id="results"></pre>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("verifyButton").addEventListener("click", async () => {
-        const jwksUrl = document.getElementById("jwksUrl").value;
+    document.getElementById("verifyButton").addEventListener("click", async () => {
+      const jwksUrl = document.getElementById("jwksUrl").value;
+      const results = document.getElementById("results");
+      results.textContent = '';  // Clear previous results
 
-        if (!jwksUrl) {
-          alert("Please enter a JWKS URL");
-          return;
-        }
+      if (!jwksUrl) {
+        alert("Please enter a JWKS URL");
+        return;
+      }
 
-        try {
-          const response = await fetch(jwksUrl);
-          const jwks = await response.json();
-          const keystore = await jose.JWK.asKeyStore(jwks);  // Use jose after the library is loaded
-          alert("JWKS is valid and keys are fetched successfully.");
-        } catch (error) {
-          alert("Error verifying JWKS: " + error.message);
-        }
-      });
+      try {
+        // Use a proxy service to bypass CORS issues
+        const proxyUrl = `https://cors-anywhere.herokuapp.com/${jwksUrl}`;
+        const jwksResponse = await fetch(proxyUrl);
+        const jwks = await jwksResponse.json();
+
+        const supportedCurves = ['P-256', 'P-384', 'P-521'];
+        let validationResults = '';
+
+        // Loop through each key in the JWKS
+        jwks.keys.forEach(key => {
+          let keyPassed = true;  // Flag to check if the key passed all conditions
+          validationResults += `Checking key with kid: ${key.kid || 'No kid provided'}\n`;
+
+          // Check if key type is EC
+          if (key.kty !== 'EC') {
+            validationResults += '  - ❌ Key type (kty) is not EC. Failed.\n';
+            keyPassed = false;
+          } else {
+            validationResults += '  - ✅ Key type (kty) is EC. Passed.\n';
+          }
+
+          // Check for required key use
+          if (key.use === 'sig') {
+            validationResults += '  - ✅ Key use is for signing (sig). Passed.\n';
+
+            // Check the curve (crv)
+            if (!supportedCurves.includes(key.crv)) {
+              validationResults += `  - ❌ Unsupported curve: ${key.crv}. Failed.\n`;
+              keyPassed = false;
+            } else {
+              validationResults += `  - ✅ Supported curve: ${key.crv}. Passed.\n`;
+            }
+
+          } else if (key.use === 'enc') {
+            validationResults += '  - ✅ Key use is for encryption (enc). Passed.\n';
+
+            // Check the encryption algorithm (alg)
+            if (['ECDH-ES', 'ECDH-ES+A256KW', 'ECDH-ES+A128KW'].includes(key.alg)) {
+              validationResults += `  - ✅ Supported algorithm for encryption: ${key.alg}. Passed.\n`;
+            } else {
+              validationResults += `  - ❌ Unsupported algorithm for encryption: ${key.alg}. Failed.\n`;
+              keyPassed = false;
+            }
+
+          } else {
+            validationResults += '  - ❌ Key use is not sig or enc. Failed.\n';
+            keyPassed = false;
+          }
+
+          // Check if the key has a kid
+          if (!key.kid) {
+            validationResults += '  - ❌ Missing key ID (kid). Failed.\n';
+            keyPassed = false;
+          } else {
+            validationResults += '  - ✅ Key ID (kid) present. Passed.\n';
+          }
+
+          if (keyPassed) {
+            validationResults += '  - ✅ Key passed all checks.\n\n';
+          } else {
+            validationResults += '  - ❌ Key failed one or more checks.\n\n';
+          }
+        });
+
+        // Display the validation results
+        results.textContent = validationResults;
+
+      } catch (error) {
+        console.error('Error verifying JWKS:', error);
+        alert("Error verifying JWKS: " + error.message);
+      }
     });
   </script>
 </body>
 </html>
+
