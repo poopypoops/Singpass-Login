@@ -81,115 +81,148 @@
         width: 90%;
       }
     }
+
+button {
+  background-color: #c03254; /* Updated color */
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 5px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: #99243f; /* Optional: a darker shade for hover */
+}
+
   </style>
 </head>
 <body>
-  <h2>JWKS Key Verification</h2>
+  <h2>Singpass JWKS Key Verification</h2>
   <p>Enter the JWKS URL to verify the keys:</p>
   <input type="text" id="jwksUrl" placeholder="Enter JWKS URL" />
   <button id="verifyButton">Verify JWKS</button>
   <pre id="results"></pre>
 
-  <script>
-    document.getElementById("verifyButton").addEventListener("click", async () => {
-      const jwksUrl = document.getElementById("jwksUrl").value;
-      const results = document.getElementById("results");
-      results.textContent = '';  // Clear previous results
+<script>
+  document.getElementById("verifyButton").addEventListener("click", async () => {
+  const jwksUrl = document.getElementById("jwksUrl").value;
+  const results = document.getElementById("results");
+  results.textContent = '';  // Clear previous results
 
-      if (!jwksUrl) {
-        alert("Please enter a JWKS URL");
-        return;
+  if (!jwksUrl) {
+    alert("Please enter a JWKS URL");
+    return;
+  }
+
+  try {
+    // Use a proxy service to bypass CORS issues
+    const proxyUrl = `https://cors-anywhere.herokuapp.com/${jwksUrl}`;
+    const jwksResponse = await fetch(proxyUrl);
+    const jwks = await jwksResponse.json();
+
+    // Display the exact JSON response in a formatted way
+    const jsonResponseDisplay = `\nJSON Response:\n${JSON.stringify(jwks, null, 2)}\n`;
+
+    const supportedCurves = ['P-256', 'P-384', 'P-521'];
+    let validationResults = '';
+    let keysDisplay = '';
+
+    // Loop through each key in the JWKS
+    jwks.keys.forEach(key => {
+      let keyPassed = true;  // Flag to check if the key passed all conditions
+
+      validationResults += `Checking key with kid: ${key.kid || 'No kid provided'}\n`;
+
+      // Check if key type is EC
+      if (key.kty !== 'EC') {
+        validationResults += '  - ❌ Key type (kty) is not EC. Failed.\n';
+        keyPassed = false;
+      } else {
+        validationResults += '  - ✅ Key type (kty) is EC. Passed.\n';
       }
 
-      try {
-        // Use a proxy service to bypass CORS issues
-        const proxyUrl = `https://cors-anywhere.herokuapp.com/${jwksUrl}`;
-        const jwksResponse = await fetch(proxyUrl);
-        const jwks = await jwksResponse.json();
+      // Check for private key components
+      const privateKeyFields = ['d', 'p', 'q', 'dp', 'dq', 'qi']; // Private key fields
+      let containsPrivateKey = false;
 
-        const supportedCurves = ['P-256', 'P-384', 'P-521'];
-        let validationResults = '';
+      privateKeyFields.forEach(field => {
+        if (key[field]) {
+          containsPrivateKey = true;
+          validationResults += `  - ❌ Key contains private component: ${field}. Must be removed.\n`;
+          keyPassed = false;
+        }
+      });
 
-        // Loop through each key in the JWKS
-        jwks.keys.forEach(key => {
-          let keyPassed = true;  // Flag to check if the key passed all conditions
-          validationResults += `Checking key with kid: ${key.kid || 'No kid provided'}\n`;
+      if (!containsPrivateKey) {
+        validationResults += '  - ✅ No private key components found. Passed.\n';
+      }
 
-          // Check if key type is EC
-          if (key.kty !== 'EC') {
-            validationResults += '  - ❌ Key type (kty) is not EC. Failed.\n';
-            keyPassed = false;
-          } else {
-            validationResults += '  - ✅ Key type (kty) is EC. Passed.\n';
-          }
+      // Check for required key use
+      if (key.use === 'sig') {
+        validationResults += '  - ✅ Key use is for signing (sig). Passed.\n';
 
-          // Check for private key components
-          const privateKeyFields = ['d', 'p', 'q', 'dp', 'dq', 'qi']; // Private key fields
-          let containsPrivateKey = false;
+        // Check the curve (crv)
+        if (!supportedCurves.includes(key.crv)) {
+          validationResults += `  - ❌ Unsupported curve: ${key.crv}. Failed.\n`;
+          keyPassed = false;
+        } else {
+          validationResults += `  - ✅ Supported curve: ${key.crv}. Passed.\n`;
+        }
 
-          privateKeyFields.forEach(field => {
-            if (key[field]) {
-              containsPrivateKey = true;
-              validationResults += `  - ❌ Key contains private component: ${field}. Must be removed.\n`;
-              keyPassed = false;
-            }
-          });
+      } else if (key.use === 'enc') {
+        validationResults += '  - ✅ Key use is for encryption (enc). Passed.\n';
 
-          if (!containsPrivateKey) {
-            validationResults += '  - ✅ No private key components found. Passed.\n';
-          }
+        // Check the encryption algorithm (alg)
+        if (['ECDH-ES', 'ECDH-ES+A256KW', 'ECDH-ES+A128KW'].includes(key.alg)) {
+          validationResults += `  - ✅ Supported algorithm for encryption: ${key.alg}. Passed.\n`;
+        } else {
+          validationResults += `  - ❌ Unsupported algorithm for encryption: ${key.alg}. Failed.\n`;
+          keyPassed = false;
+        }
 
-          // Check for required key use
-          if (key.use === 'sig') {
-            validationResults += '  - ✅ Key use is for signing (sig). Passed.\n';
+      } else {
+        validationResults += '  - ❌ Key use is not sig or enc. Failed.\n';
+        keyPassed = false;
+      }
 
-            // Check the curve (crv)
-            if (!supportedCurves.includes(key.crv)) {
-              validationResults += `  - ❌ Unsupported curve: ${key.crv}. Failed.\n`;
-              keyPassed = false;
-            } else {
-              validationResults += `  - ✅ Supported curve: ${key.crv}. Passed.\n`;
-            }
+      // Check if the key has a kid
+      if (!key.kid) {
+        validationResults += '  - ❌ Missing key ID (kid). Failed.\n';
+        keyPassed = false;
+      } else {
+        validationResults += '  - ✅ Key ID (kid) present. Passed.\n';
+      }
 
-          } else if (key.use === 'enc') {
-            validationResults += '  - ✅ Key use is for encryption (enc). Passed.\n';
+      // Check for x and y values (necessary for EC keys)
+      if (!key.x || !key.y) {
+        validationResults += '  - ❌ Missing x or y values. Failed.\n';
+        keyPassed = false;
+      } else {
+        validationResults += '  - ✅ x and y values are present. Passed.\n';
+      }
 
-            // Check the encryption algorithm (alg)
-            if (['ECDH-ES', 'ECDH-ES+A256KW', 'ECDH-ES+A128KW'].includes(key.alg)) {
-              validationResults += `  - ✅ Supported algorithm for encryption: ${key.alg}. Passed.\n`;
-            } else {
-              validationResults += `  - ❌ Unsupported algorithm for encryption: ${key.alg}. Failed.\n`;
-              keyPassed = false;
-            }
-
-          } else {
-            validationResults += '  - ❌ Key use is not sig or enc. Failed.\n';
-            keyPassed = false;
-          }
-
-          // Check if the key has a kid
-          if (!key.kid) {
-            validationResults += '  - ❌ Missing key ID (kid). Failed.\n';
-            keyPassed = false;
-          } else {
-            validationResults += '  - ✅ Key ID (kid) present. Passed.\n';
-          }
-
-          if (keyPassed) {
-            validationResults += '  - ✅ Key passed all checks.\n\n';
-          } else {
-            validationResults += '  - ❌ Key failed one or more checks.\n\n';
-          }
-        });
-
-        // Display the validation results
-        results.textContent = validationResults;
-
-      } catch (error) {
-        console.error('Error verifying JWKS:', error);
-        alert("Error verifying JWKS: " + error.message);
+      if (keyPassed) {
+        validationResults += '  - ✅ Key passed all checks.\n\n';
+      } else {
+        validationResults += '  - ❌ Key failed one or more checks.\n\n';
       }
     });
-  </script>
+
+    // Display the key details, validation results, and the raw JSON response
+    results.textContent = `${jsonResponseDisplay}\n${validationResults}`;
+
+  } catch (error) {
+    console.error('Error verifying JWKS:', error);
+    alert("Error verifying JWKS: " + error.message);
+  }
+});
+
+</script>
+
+
 </body>
 </html>
+
