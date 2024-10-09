@@ -4,32 +4,34 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>JWKS Verifier</title>
+  <script src="https://cdn.jsdelivr.net/npm/jose@4.13.1/dist/browser/jose.min.js"></script>
 </head>
 <body>
   <h2>JWKS Key Verification</h2>
   <p>Enter the JWKS URL of the Relying Party to verify the keys:</p>
   <input type="text" id="jwksUrl" placeholder="Enter JWKS URL" />
-  <button onclick="verifyJWKS()">Verify JWKS</button>
+  <button id="verifyButton">Verify JWKS</button>
 
-  <script src="https://cdn.jsdelivr.net/npm/jose@latest/dist/browser/jose.min.js"></script>
   <script>
-    async function verifyJWKS() {
-      const jwksUrl = document.getElementById("jwksUrl").value;
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("verifyButton").addEventListener("click", async () => {
+        const jwksUrl = document.getElementById("jwksUrl").value;
 
-      if (!jwksUrl) {
-        alert("Please enter a JWKS URL");
-        return;
-      }
+        if (!jwksUrl) {
+          alert("Please enter a JWKS URL");
+          return;
+        }
 
-      try {
-        const response = await fetch(jwksUrl);
-        const jwks = await response.json();
-        const keystore = await jose.JWK.asKeyStore(jwks);
-        alert("JWKS is valid and keys are fetched successfully.");
-      } catch (error) {
-        alert("Error verifying JWKS: " + error.message);
-      }
-    }
+        try {
+          const response = await fetch(jwksUrl);
+          const jwks = await response.json();
+          const keystore = await jose.JWK.asKeyStore(jwks);  // Use jose after the library is loaded
+          alert("JWKS is valid and keys are fetched successfully.");
+        } catch (error) {
+          alert("Error verifying JWKS: " + error.message);
+        }
+      });
+    });
   </script>
 </body>
 </html>
